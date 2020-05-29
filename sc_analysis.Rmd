@@ -1,0 +1,1389 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+library("Seurat")
+library(ggplot2)
+library(stringr)
+library(tidyverse)
+library(dplyr)
+library(stringr)
+library(cowplot)
+
+
+```
+
+```{r}
+# set up future for parallelization
+#library(future)
+#library(future.apply)
+#install_version("hdf5r", version = "1.3.1",)
+```
+
+
+```{r}
+#setwd("/usr/local/ssd/sc_covid")
+#load("integrated.all.de.RData")
+setwd("/mnt/d/dev/data/pekayvaz/sc_analysis")
+load("session_submission_slim.RData")
+```
+
+```{r}
+DefaultAssay(object=obj.integrated) = "RNA"
+
+obj.integrated
+```
+
+
+# Cluster assignment
+
+## Based upon predictions from https://github.com/mjoppich/scrnaseq_celltype_prediction .
+
+
+```{r}
+new.cluster.ids <- c("Monocytes;Immune system","Monocytes;Immune system","Dendritic cells;Immune system","Dendritic cells;Immune system","Dendritic cells;Immune system","Kupffer cells;Liver","T memory cells;Immune system","T memory cells;Immune system","Macrophages;Immune system","Macrophages;Immune system","T memory cells;Immune system","Plasma cells;Immune system","Ependymal cells;Brain","Dendritic cells;Immune system","Luminal epithelial cells;Mammary gland","Monocytes;Immune system","Macrophages;Immune system","NK cells;Immune system","Monocytes;Immune system","NK cells;Immune system","Kupffer cells;Liver","Monocytes;Immune system","Monocytes;Immune system","B cells naive;Immune system","Dendritic cells;Immune system","Plasmacytoid dendritic cells;Immune system","Pulmonary alveolar type II cells;Lungs","Plasma cells;Immune system")
+orignames = Idents(obj.integrated)
+names(new.cluster.ids) <- levels(orignames)
+levels(orignames) = new.cluster.ids
+obj.integrated$cellnames = orignames
+
+```
+
+Corresponding UMAP Visualization.
+
+```{r fig.width=20, fig.height=10}
+DefaultAssay(object=obj.integrated) ="RNA"
+DimPlot(obj.integrated, group.by="cellnames", reduction = "umap", label=T)
+```
+Same clustering/data, but cluster idents instead of cell types.
+
+```{r fig.width=20, fig.height=10}
+DefaultAssay(object=obj.integrated) ="RNA"
+DimPlot(obj.integrated,  reduction = "umap", label=T)
+```
+
+Here we assign the Sample to a disease_state
+
+```{r eval=FALSE, warning=FALSE}
+
+cellList = colnames(obj.integrated)
+
+featVec <- vector(mode="character", length=length(cellList))
+featVec[grep(x = cellList, pattern = "^GSM4339769")] = "mild"
+featVec[grep(x = cellList, pattern = "^GSM4339770")] = "mild"
+featVec[grep(x = cellList, pattern = "^GSM4339771")] = "severe"
+featVec[grep(x = cellList, pattern = "^GSM4339772")] = "mild"
+featVec[grep(x = cellList, pattern = "^GSM4339773")] = "severe"
+featVec[grep(x = cellList, pattern = "^GSM4339774")] = "severe"
+
+featVec[grep(x = cellList, pattern = "^GSM4475048")] = "control"
+featVec[grep(x = cellList, pattern = "^GSM4475049")] = "control"
+featVec[grep(x = cellList, pattern = "^GSM4475050")] = "control"
+featVec[grep(x = cellList, pattern = "^GSM4475051")] = "severe"
+featVec[grep(x = cellList, pattern = "^GSM4475052")] = "severe"
+featVec[grep(x = cellList, pattern = "^GSM4475053")] = "severe"
+
+unique(featVec)
+
+obj.integrated$disease_state=featVec
+
+```
+
+And visualize data again split by disease state
+
+```{r fig.width=20, fig.height=8}
+
+DefaultAssay(object=obj.integrated) ="RNA"
+p=DimPlot(obj.integrated, group.by="cellnames", split.by="disease_state", reduction = "umap", label=T)
+
+pdf(file = "plots/umap_by_disease_state_groups.pdf",width = 15, height = 8)
+plot(p)
+dev.off()
+
+p
+```
+
+```{r fig.width=20, fig.height=8}
+
+#DefaultAssay(object=obj.integrated) ="RNA"
+
+#CombinePlots(list(
+#  DimPlot(obj.integrated, reduction = "umap", label=T, combine=T, ncol=1),
+#  DimPlot(obj.integrated, split.by="disease_state", reduction = "umap", label=T, combine=T, ncol=1)
+#),)
+
+```
+
+But can do this also for regular idents
+
+```{r fig.width=15, fig.height=8}
+
+DefaultAssay(object=obj.integrated) ="RNA"
+p=DimPlot(obj.integrated, split.by="disease_state", reduction = "umap", label=T, combine=T)
+
+pdf(file = "plots/umap_by_disease_state.pdf",width = 15, height = 8)
+plot(p)
+dev.off()
+
+p
+```
+
+We can also do the plots one by one. Note: we downsample the cells to 7000 to make the cluster sizes comparable.
+
+downsampling as proposed by satijalab https://github.com/satijalab/seurat/issues/1325
+
+```{r fig.width=15, fig.height=8}
+
+#
+
+DefaultAssay(object=obj.integrated) ="RNA"
+
+pltMild = subset(obj.integrated, cells=sample(names(obj.integrated$disease_state[obj.integrated$disease_state=="mild"]), 7000))
+pMild=DimPlot(pltMild, reduction = "umap", label=F, combine=T) + xlim(-15,10)+ylim(-10,15)
+pltMild=NULL
+
+#png(file = "umap_by_disease_state_mild.png",width = 600, height = 500)
+pdf(file = "plots/umap_by_disease_state_mild.pdf", width = 12, height = 10)
+plot(pMild)
+dev.off()
+
+pltSevere = subset(obj.integrated, cells=sample(names(obj.integrated$disease_state[obj.integrated$disease_state=="severe"]), 7000))
+pSevere=DimPlot(pltSevere, reduction = "umap", label=F, combine=T)+ xlim(-15,10)+ylim(-10,15)
+pltSevere=NULL
+#png(file = "umap_by_disease_state_severe.png",width = 600, height = 500)
+pdf(file = "plots/umap_by_disease_state_severe.pdf", width = 12, height = 10)
+plot(pSevere)
+dev.off()
+
+pltControl = subset(obj.integrated, cells=sample(names(obj.integrated$disease_state[obj.integrated$disease_state=="control"]), 7000))
+pControl=DimPlot(pltControl, reduction = "umap", label=F, combine=T)+ xlim(-15,10)+ylim(-10,15)
+pltControl=NULL
+#png(file = "umap_by_disease_state_control.png",width = 600, height = 500)
+pdf(file = "plots/umap_by_disease_state_control.pdf", width = 12, height = 10)
+plot(pControl)
+dev.off()
+
+cowplot::plot_grid(pControl, pMild, pSevere, labels=c("C", "M", "S"))
+```
+
+And again the by disease state plot. No idea why.
+
+```{r fig.width=15, fig.height=8}
+
+DefaultAssay(object=obj.integrated) ="RNA"
+p=DimPlot(obj.integrated, split.by="disease_state", reduction = "umap", label=T, combine=T)
+
+pdf(file = "umap_by_disease_state.pdf",width = 15, height = 8)
+plot(p)
+dev.off()
+p
+```
+
+This was a try to see which principal components are important and deliver unique features! But you can't see a lot, and it takes ages ...
+
+```{r fig.width=50, fig.height=30, eval=FALSE, warning=FALSE}
+
+
+pcs.plot=paste("PC_",1:50,sep="")
+pcs.plot
+
+p=FeaturePlot(subset(obj.integrated, downsample = 50), features = pcs.plot, cols=heat.colors(10), reduction="pca",split.by="ident")
+
+jpeg(filename = "plots/pc_heatmap.jpeg",width = 8000, height = 8000)
+plot(p)
+dev.off()
+p
+
+```
+
+Note: exprdf was calculated in the preprocessing R script!
+
+```{r fig.width=20, fig.height=30}
+
+markers.use=subset(exprdf ,avg_logFC>0&p_val_adj<0.01)
+markers.use
+finalMarkers = markers.use %>% arrange(p_val_adj) %>% group_by(clusterID) %>% slice(1:15)
+finalMarkers
+
+DoHeatmap(subset(obj.integrated, downsample = 100), group.by="ident", features = finalMarkers$gene, size = 3)
+```
+
+After clustering we observed that certain clusters are only present in specific disease states.
+Here we want to asses this by calculating the number of cells per disease state per cluster.
+
+```{r eval=FALSE, warning=FALSE}
+
+allClusters = as.character(sort(unique(Idents(obj.integrated))))
+cellCounts = list()
+
+for (clusterID in allClusters)
+{
+  print(clusterID)
+  
+  cs = subset(obj.integrated, idents=c(clusterID))
+  
+  allElems = table(cs$disease_state)
+  clusterList = list()
+  clusterList[["cluster"]] = clusterID
+  clusterList[["all"]] = length(cs$disease_state)
+
+  cs = NULL
+  
+  for (grp in names(allElems))
+  {
+    clusterList[[grp]] = allElems[[grp]]
+  }
+  
+  
+  cellCounts[[clusterID]] = clusterList
+  
+}
+
+df = cellCounts %>%
+  map(as.data.frame) %>%
+  bind_rows()
+df[is.na(df)] <- 0
+
+View(df)
+write.table(df, file="stats/cellcounts.tsv", row.names = F,  quote=FALSE, sep='\t')
+
+df
+
+```
+
+This function performs the DE analysis between the respective sets ....
+
+```{r eval=FALSE, warning=FALSE}
+
+doDEAnalysis = function() {
+  
+
+
+allClusters = as.character(sort(unique(Idents(obj.integrated))))
+cellCounts = list()
+
+mildVScontrolsDE = list()
+severeVScontrolsDE = list()
+severeVSmildDE = list()
+
+severeVSotherDE = list()
+controlVSotherDE = list()
+mildVSotherDE = list()
+
+severeMarkersDE = list()
+mildMarkersDE = list()
+controlMarkersDE = list()
+
+
+assay="RNA"
+test="MAST"
+
+for (clusterID in allClusters)
+{
+  print(clusterID)
+  
+  cellIdents = Idents(obj.integrated)
+  cellIdents.c = names(cellIdents[cellIdents == clusterID])
+  cellIdents.c = unlist(lapply(cellIdents.c, as.character))
+  cellIdents.c = unique(cellIdents.c)
+  
+  print(length(cellIdents.c))
+  
+  mildCells = names(obj.integrated$disease_state[obj.integrated$disease_state == "mild"])
+  severeCells = names(obj.integrated$disease_state[obj.integrated$disease_state == "severe"])
+  controlCells = names(obj.integrated$disease_state[obj.integrated$disease_state == "control"])
+  
+  mildCells =    intersect(mildCells, cellIdents.c)
+  severeCells =  intersect(severeCells, cellIdents.c)
+  controlCells = intersect(controlCells, cellIdents.c)
+  
+  cellsMildControl = union(mildCells, controlCells)
+  cellsMildSevere = union(mildCells, severeCells)
+  cellsSevereControl = union(severeCells, controlCells)
+  
+  print(length(mildCells))
+  print(length(severeCells))
+  print(length(controlCells))
+  
+  if ((length(mildCells) > 3) && (length(controlCells) > 3))
+  {
+      mildVScontrolsDE[[clusterID]] = FindMarkers(obj.integrated, assay=assay, ident.1 = mildCells, ident.2 = controlCells, test.use=test)
+  } else {
+    print(paste("mildVScontrolsDE", "Skipping DE", length(mildCells), length(controlCells)))
+  }
+  
+  if ((length(severeCells) > 3) && (length(controlCells) > 3))
+  {
+      severeVScontrolsDE[[clusterID]] = FindMarkers(obj.integrated, assay=assay, ident.1 = severeCells, ident.2 = controlCells, test.use=test)
+  } else {
+    print(paste("severeVScontrolsDE", "Skipping DE", length(severeCells), length(controlCells)))
+  }
+  
+  if ((length(severeCells) > 3) && (length(mildCells) > 3))
+  {
+      severeVSmildDE[[clusterID]] = FindMarkers(obj.integrated, assay=assay, ident.1 = severeCells, ident.2 = mildCells, test.use=test)
+  } else {
+    print(paste("severeVSmildDE", "Skipping DE", length(severeCells), length(mildCells)))
+  }
+  
+  if ((length(severeCells) > 3) && (length(cellsMildControl) > 3))
+  {
+      severeVSotherDE[[clusterID]] = FindMarkers(obj.integrated, assay=assay, ident.1 = severeCells, ident.2 = cellsMildControl, test.use=test)
+  } else {
+    print(paste("severeVSotherDE", "Skipping DE", length(severeCells), length(cellsMildControl)))
+  }
+  
+  if ((length(mildCells) > 3) && (length(cellsSevereControl) > 3))
+  {
+      mildVSotherDE[[clusterID]] = FindMarkers(obj.integrated, assay=assay, ident.1 = mildCells, ident.2 = cellsSevereControl, test.use=test)
+  } else {
+    print(paste("mildVSotherDE", "Skipping DE", length(mildCells), length(cellsSevereControl)))
+  }
+  
+  if ((length(controlCells) > 3) && (length(cellsMildSevere) > 3))
+  {
+      controlVSotherDE[[clusterID]] = FindMarkers(obj.integrated, assay=assay, ident.1 = controlCells, ident.2 = cellsMildSevere, test.use=test)
+  } else {
+    print(paste("controlVSotherDE", "Skipping DE", length(controlCells), length(cellsMildSevere)))
+  }
+  
+  
+  if ((length(severeCells) > 3) )
+  {
+      severeMarkersDE[[clusterID]] = FindMarkers(obj.integrated, assay=assay, ident.1 = severeCells, test.use=test)
+  } else {
+    print(paste("severeMarkersDE", "Skipping DE", length(severeCells)))
+  }
+  
+  if ((length(mildCells) > 3))
+  {
+      mildMarkersDE[[clusterID]] = FindMarkers(obj.integrated, assay=assay, ident.1 = mildCells, test.use=test)
+  } else {
+    print(paste("mildMarkersDE", "Skipping DE", length(mildCells)))
+  }
+  
+  if ((length(controlCells) > 3))
+  {
+      controlMarkersDE[[clusterID]] = FindMarkers(obj.integrated, assay=assay, ident.1 = controlCells, test.use=test)
+  } else {
+    print(paste("controlVSotherDE", "Skipping DE", length(controlCells)))
+  }
+
+  
+}
+
+}
+
+```
+
+These functions annotate the DE tables in a way that it is interpretable for the cell type determination and further analysis!
+
+```{r eval=FALSE, warning=FALSE}
+getExprData = function(markerObj, markerCells)
+{
+expTable = GetAssayData(object = subset(x=markerObj, cells=markerCells), slot = "data")
+
+outvalues1 = t(apply(expTable, 1, function(x) {
+    a=x[x > 0];
+    #a=x;
+    out = {}
+    
+    out["anum"] = length(x)
+    out["num"] = length(a)
+    
+    f = fivenum(a)
+    out["min"] = f[1]
+    out["lower_hinge"] = f[2]
+    out["median"] = f[3]
+    out["upper_hinge"] = f[4]
+    out["max"] = f[5]
+    out["mean"] = mean(a)
+    
+    out
+}))
+outvalues1 = cbind(rownames(outvalues1), outvalues1)
+cnames = colnames(outvalues1)
+cnames[1] = "gene"
+colnames(outvalues1) = cnames
+
+return(outvalues1)
+}
+
+getDEXpressionDF = function ( scdata, markers, assay="SCT" )
+{
+
+outDF = NULL
+DefaultAssay(object=scdata) = assay  
+clusterIDs = as.character(sort(unique(Idents(scdata))))
+
+scCells = Idents(scdata)
+scCells = names(scCells)
+scCells = unlist(as.character(scCells))
+
+for (clusterID in clusterIDs){
+    
+    print(clusterID)
+    
+    cellIdents = Idents(scdata)
+    cellIdents.c = names(cellIdents[cellIdents == clusterID])
+    cellIdents.c = unlist(lapply(cellIdents.c, as.character))    
+    
+    expvals = getExprData(scdata, cellIdents.c)
+
+    modmarkers = markers[[clusterID]]
+    modmarkers$gene = rownames(modmarkers)
+    
+    markerdf = as.data.frame(modmarkers)
+    
+    if ((nrow(markerdf) > 0) && (nrow(expvals) > 0))
+    {
+    expvals = merge(markerdf, expvals, all.x=T, by.x="gene", by.y = "gene")  
+    } else {
+      print(paste("No Data", clusterID))
+    }
+    
+    expvals = as.data.frame(cbind(clusterID, expvals))
+    
+    if (!is.data.frame(outDF) || nrow(outDF)==0)
+    {
+    outDF = expvals
+    } else {
+    outDF = as.data.frame(rbind(outDF, expvals))
+    }
+    
+}
+
+return(outDF)
+
+}
+```
+
+
+Using the getDEXpressionDF function we can annotate the above DEG tables with absolute counts
+
+```{r eval=FALSE, warning=FALSE}
+mildVScontrolsDEdf = getDEXpressionDF(obj.integrated, mildVScontrolsDE, assay="RNA")
+write.table(mildVScontrolsDEdf, "mildVScontrolsDEdf.tsv", sep="\t", row.names=F, quote = F)
+```
+
+
+```{r}
+mildVScontrolsDE = list()
+severeVScontrolsDE = list()
+severeVSmildDE = list()
+
+severeVSotherDE = list()
+controlVSotherDE = list()
+mildVSotherDE = list()
+
+severeMarkersDE = list()
+mildMarkersDE = list()
+controlMarkersDE = list()
+
+```
+
+
+The below functions can then be used to write the DEG tables to a folder...
+
+```{r eval=F}
+
+getExprData = function(markerObj, markerCells, sampleSuffix)
+{
+  expTable = GetAssayData(object = subset(x=markerObj, cells=markerCells), slot = "data")
+    
+    outvalues1 = t(apply(expTable, 1, function(x) {
+            a=x[x > 0];
+            #a=x;
+            out = {}
+      
+            out["anum"] = length(x)
+            out["num"] = length(a)
+      
+            f = fivenum(a)
+            out["min"] = f[1]
+            out["lower_hinge"] = f[2]
+            out["median"] = f[3]
+            out["upper_hinge"] = f[4]
+            out["max"] = f[5]
+            out["mean"] = mean(a)
+      
+            out
+          }))
+    outvalues1 = cbind(rownames(outvalues1), outvalues1)
+    cnames = paste(colnames(outvalues1), ".", sampleSuffix, sep="")
+    cnames[1] = "gene"
+    colnames(outvalues1) = cnames
+    
+    return(outvalues1)
+}
+
+
+printDEDataExpression = function ( markerList, cells1, cells2, suffix1, suffix2, outfolder, refObj, assay="RNA")
+{
+    dir.create(outfolder)
+
+  
+  DefaultAssay(object=refObj) = assay
+  clusterIDs = unique(names(markerList))
+  print(clusterIDs)
+                      
+  for (clusterID in clusterIDs){
+    
+    print(clusterID)
+    
+    cellIdents = Idents(refObj)
+    cellIdents.c = names(cellIdents[cellIdents == clusterID])
+    cellIdents.c = unlist(lapply(cellIdents.c, as.character))
+    
+    marker1Cells = intersect(cells1, cellIdents.c)
+    
+    marker2Cells = NULL
+    if (!is.null(cells2))
+    {
+      marker2Cells = intersect(cells2, cellIdents.c)
+      print(paste("marker 2 cells:", length(marker2Cells)))
+    }
+    
+  
+    outvalues1 = getExprData(refObj, marker1Cells, suffix1)
+    
+    
+    outvalues2 = NULL
+    if (!is.null(cells2))
+    {
+      outvalues2 = getExprData(refObj, marker2Cells, suffix2) 
+    }
+    
+    #outvalues3 = getExprData(refObj, marker1Cells, paste("ref", suffix1, sep="_"))
+    #outvalues4 = getExprData(refObj, marker2Cells, paste("ref", suffix2, sep="_"))
+
+    
+    clusterList = markerList[[clusterID]]
+    clusterList$gene = rownames(clusterList)
+    
+    #joinedData = merge(clusterList, outvalues3, by="gene", all=T)
+    #joinedData = merge(joinedData, outvalues4, by="gene", all=T)
+    joinedData = merge(clusterList, outvalues1, by="gene", all=T)
+    
+    if (!is.null(cells2))
+    {
+      joinedData = merge(joinedData, outvalues2, by="gene", all=T)  
+    }
+    
+    joinedData = joinedData[!is.na(joinedData$p_val),]
+    
+    if (!is.null(cells2))
+    {
+      outfile = paste(outfolder, "/", "cluster.", clusterID, ".", suffix1, "_", suffix2, ".tsv", sep="")
+    } else {
+      outfile = paste(outfolder, "/", "cluster.", clusterID, ".", suffix1, ".tsv", sep="")
+    }
+    
+    
+    message(outfile)
+    write.table(joinedData, file=outfile, row.names = F,  quote=FALSE, sep='\t')
+  }
+  
+}
+
+allCells = names(obj.integrated$disease_state)
+
+allMildCells = names(obj.integrated$disease_state[obj.integrated$disease_state == "mild"])
+allSevereCells = names(obj.integrated$disease_state[obj.integrated$disease_state == "severe"])
+allControlCells = names(obj.integrated$disease_state[obj.integrated$disease_state == "control"])
+
+allCellsMildControl = union(allMildCells, allControlCells)
+allCellsMildSevere = union(allMildCells, allSevereCells)
+allCellsSevereControl = union(allSevereCells, allControlCells)
+
+
+```
+
+```{r eval=F}
+
+printDEDataExpression(markerList = mildVScontrolsDE,
+                      cells1 = allMildCells, cells2 = allControlCells,
+                      suffix1 = "mild", suffix2="control",
+                      refObj = obj.integrated, outfolder = "mildVScontrolsDE")
+
+printDEDataExpression(markerList = severeVScontrolsDE,
+                      cells1 = allSevereCells, cells2 = allControlCells,
+                      suffix1 = "severe", suffix2="control",
+                      refObj = obj.integrated, outfolder = "severeVScontrolsDE")
+
+printDEDataExpression(markerList = severeVSmildDE,
+                      cells1 = allSevereCells, cells2 = allMildCells,
+                      suffix1 = "severe", suffix2="mild",
+                      refObj = obj.integrated, outfolder = "severeVSmildDE")
+
+
+
+
+
+```
+
+```{r eval=F}
+
+
+printDEDataExpression(markerList = severeVSotherDE,
+                      cells1 = allSevereCells, cells2 = allCellsMildControl,
+                      suffix1 = "severe", suffix2="mild_control",
+                      refObj = obj.integrated, outfolder = "severeVSotherDE")
+
+printDEDataExpression(markerList = controlVSotherDE,
+                      cells1 = allControlCells, cells2 = allCellsMildSevere,
+                      suffix1 = "control", suffix2="mild_severe",
+                      refObj = obj.integrated, outfolder = "controlVSotherDE")
+
+printDEDataExpression(markerList = mildVSotherDE,
+                      cells1 = allSevereCells, cells2 = allCellsMildSevere,
+                      suffix1 = "mild", suffix2="severe_control",
+                      refObj = obj.integrated, outfolder = "mildVSotherDE")
+
+
+
+
+
+
+
+```
+
+```{r eval=F}
+
+
+printDEDataExpression(markerList = severeMarkersDE,
+                      cells1 = allSevereCells, cells2 = NULL,
+                      suffix1 = "severe", suffix2=NULL,
+                      refObj = obj.integrated, outfolder = "severeMarkersDE")
+
+printDEDataExpression(markerList = mildMarkersDE,
+                      cells1 = allMildCells, cells2 = NULL,
+                      suffix1 = "mild", suffix2=NULL,
+                      refObj = obj.integrated, outfolder = "mildMarkersDE")
+
+printDEDataExpression(markerList = controlMarkersDE,
+                      cells1 = allControlCells, cells2 = NULL,
+                      suffix1 = "control", suffix2=NULL,
+                      refObj = obj.integrated, outfolder = "controlMarkersDE")
+
+```
+
+```{r eval=F}
+printDEDataExpression(markerList = deRes,
+                      cells1 = allCells, cells2 = NULL,
+                      suffix1 = "all", suffix2=NULL,
+                      refObj = obj.integrated, outfolder = "all_markers")
+```
+
+
+# Analyses by request
+
+This function mainly takes as input two cluster IDs such that specific clusters can be compared, e.g. Clusters 17 and 19.
+
+```{r compare clusters 17 and 19,  eval=FALSE, warning=FALSE}
+
+compareClustersByID = function(scdata, clusterID1, clusterID2, suffix1, suffix2, test="MAST", assay="RNA")
+{
+  
+    cellIdents = Idents(scdata)
+    cellIdents.1 = names(cellIdents[cellIdents == clusterID1])
+    cellIdents.1 = unlist(lapply(cellIdents.1, as.character))    
+    
+    cellIdents.2 = names(cellIdents[cellIdents == clusterID2])
+    cellIdents.2 = unlist(lapply(cellIdents.2, as.character))  
+    
+    markers = FindMarkers(scdata, assay=assay, ident.1 = cellIdents.1, ident.2 = cellIdents.2, test.use=test)
+    
+    outvalues1 = getExprData(scdata, cellIdents.1, suffix1)
+    outvalues2 = getExprData(scdata, cellIdents.2, suffix2) 
+    
+    
+    markers$gene = rownames(markers)
+
+    joinedData = merge(markers, outvalues1, by="gene", all=T)
+    joinedData = merge(joinedData, outvalues2, by="gene", all=T)  
+
+    
+    joinedData = joinedData[!is.na(joinedData$p_val),]
+    
+    outfile = paste("special_de/", "cluster.", suffix1, "_", suffix2, ".tsv", sep="")
+    
+    message(outfile)
+    write.table(joinedData, file=outfile, row.names = F,  quote=FALSE, sep='\t')
+}
+
+clus17_19DE = compareClustersByID(scdata=obj.integrated, clusterID1=17, clusterID2=19, suffix1="cl17", suffix2="cl19", test="MAST", assay="RNA")
+
+```
+
+
+ By request: umap without and with labels
+```{r}
+
+p=DimPlot(obj.integrated, reduction = "umap", label=T, combine=T)+ xlim(-15,10)+ylim(-10,15)
+
+pdf(file = "plots/umap_all_with_label.pdf", width = 12, height = 10)
+plot(p)
+dev.off()
+
+p=DimPlot(obj.integrated, reduction = "umap", label=F, combine=T)+ xlim(-15,10)+ylim(-10,15)
+
+pdf(file = "plots/umap_all_without_label.pdf", width = 12, height = 10)
+plot(p)
+dev.off()
+
+p
+```
+We know want to find macrophage groups according to the original paper. Let's check FCN1, SPP1, FABP4 and by request, FCGR3A:
+
+```{r fig.height=10, fig.width=14}
+
+VlnPlot(obj.integrated, features = c("FCN1", "SPP1", "FABP4", "FCGR3A"), ncol = 2, pt.size=0)
+
+```
+
+```{r fig.height=14, fig.width=14}
+
+RidgePlot(obj.integrated, features = c("FCN1", "SPP1", "FABP4", "FCGR3A"), ncol = 2)
+
+```
+
+After some discussion, we came up with the following definition of macrophage groups
+
+```{r}
+
+# FCN1+
+grp1Idents = c(0,15,21)
+
+# FCN1+ SPP1+
+grp2Idents = c(8,16)
+
+# FCN1- SPP1+
+grp3Idents = c(1)
+
+
+# Macrophage group!
+grpMacIdents = union(grp1Idents, union(grp2Idents, grp3Idents))
+
+# FABP4+
+grp4Idents = c(2,3,4,5,9,20,22)
+
+grpMacFabIdents = union(grpMacIdents, grp4Idents)
+
+grpOtherIdents = c(6,7,10,11,13,17,18,19,23,25,27)
+grpOtherNo18Idents = c(6,7,10,11,13,17,19,23,25,27)
+grpOtherNo2718106Idents = c(7,11,13,17,19,23,25)
+
+grpNKIdents = c(17,19)
+
+#7, 17, 13, 25
+grpRemainIdents = c(7,13,17,25)
+
+
+```
+
+
+This function allows to fetch cells by cluster IDs
+```{r}
+makeGrpCells = function(scdata, clusterIdents)
+{
+    cellIdents = Idents(scdata)
+    cellIdents.1 = names(cellIdents[cellIdents %in% clusterIdents])
+    cellIdents.1 = unlist(lapply(cellIdents.1, as.character))   
+    
+    return(cellIdents.1)
+}
+```
+
+
+And here we fetch cells for the above groups of clusters IDs
+```{r}
+
+
+grp1Cells = makeGrpCells(obj.integrated, grp1Idents)
+grp2Cells = makeGrpCells(obj.integrated, grp2Idents)
+grp3Cells = makeGrpCells(obj.integrated, grp3Idents)
+grp4Cells = makeGrpCells(obj.integrated, grp4Idents)
+
+grpRemainCells = makeGrpCells(obj.integrated, grpRemainIdents)
+
+grpMacCells = union(grp1Cells, union(grp2Cells, grp3Cells))
+grpNKCells = makeGrpCells(obj.integrated, grpNKIdents)
+
+
+grpMacFabCells = makeGrpCells(obj.integrated, grpMacFabIdents)
+grpOtherCells = makeGrpCells(obj.integrated, grpOtherIdents)
+grpOtherNo18Cells = makeGrpCells(obj.integrated, grpOtherNo18Idents)
+
+grpOtherNo2718106Cells = makeGrpCells(obj.integrated, grpOtherNo2718106Idents)
+
+```
+
+Similar to above, we define a function to create our loved DEG tables ...
+
+```{r}
+
+compareClusters = function(scdata, cellsID1, cellsID2, suffix1, suffix2, test="MAST", assay="RNA", all=FALSE)
+{
+
+    logfc.threshold = 0.25
+    
+    if (all==TRUE)
+    {
+    logfc.threshold = 0.01  
+    }
+    
+    markers = FindMarkers(scdata, assay=assay, ident.1 = cellsID1, ident.2 = cellsID2, test.use=test, logfc.threshold=logfc.threshold)
+    
+    outvalues1 = getExprData(scdata, cellsID1, suffix1)
+    outvalues2 = getExprData(scdata, cellsID2, suffix2) 
+    
+    
+    markers$gene = rownames(markers)
+
+    joinedData = merge(markers, outvalues1, by="gene", all=T)
+    joinedData = merge(joinedData, outvalues2, by="gene", all=T)  
+
+    
+    joinedData = joinedData[!is.na(joinedData$p_val),]
+    
+    outfile = paste("special_de/", "cluster.", suffix1, "_", suffix2, ".tsv", sep="")
+    
+    message(outfile)
+    write.table(joinedData, file=outfile, row.names = F,  quote=FALSE, sep='\t')
+    
+    return(joinedData)
+}
+
+```
+
+```{r eval=F}
+
+grp1_vs_grp2_3 = compareClusters(scdata=obj.integrated, cellsID1=grp1Cells, cellsID2=union(grp2Cells, grp3Cells), suffix1="grp1", suffix2="grp2_3", test="MAST", assay="RNA")
+
+grp2_vs_grp1_3 = compareClusters(scdata=obj.integrated, cellsID1=grp2Cells, cellsID2=union(grp1Cells, grp3Cells), suffix1="grp2", suffix2="grp1_3", test="MAST", assay="RNA")
+
+grp3_vs_grp1_2 = compareClusters(scdata=obj.integrated, cellsID1=grp3Cells, cellsID2=union(grp1Cells, grp2Cells), suffix1="grp3", suffix2="grp1_2", test="MAST", assay="RNA")
+
+
+
+```
+
+This is to check whether all cells are either mild, severe or control. Could've been done above, but is still sufficient here :)
+
+```{r}
+
+cellIdents = Idents(obj.integrated)
+cellIdents.c = names(cellIdents)
+cellIdents.c = unlist(lapply(cellIdents.c, as.character))
+cellIdents.c = unique(cellIdents.c)
+
+print(length(cellIdents.c))
+
+mildCells = names(obj.integrated$disease_state[obj.integrated$disease_state == "mild"])
+severeCells = names(obj.integrated$disease_state[obj.integrated$disease_state == "severe"])
+controlCells = names(obj.integrated$disease_state[obj.integrated$disease_state == "control"])
+
+mildCells =    intersect(mildCells, cellIdents.c)
+severeCells =  intersect(severeCells, cellIdents.c)
+controlCells = intersect(controlCells, cellIdents.c)
+
+print(paste("mild cells", length(mildCells)))
+print(paste("severe cells", length(severeCells)))
+print(paste("control cells", length(controlCells)))
+
+```
+
+And now we perform heaps of cluster comparisons: grp1_mild vs grp1_severe, etc. ...
+```{r eval=F}
+
+grp1_mild_severe = compareClusters(scdata=obj.integrated, cellsID1=intersect(grp1Cells, mildCells), cellsID2=intersect(grp1Cells, severeCells), suffix1="grp1_mild", suffix2="grp1_severe", test="MAST", assay="RNA")
+
+grp2_mild_severe = compareClusters(scdata=obj.integrated, cellsID1=intersect(grp2Cells, mildCells), cellsID2=intersect(grp2Cells, severeCells), suffix1="grp2_mild", suffix2="grp2_severe", test="MAST", assay="RNA")
+
+grp3_mild_severe = compareClusters(scdata=obj.integrated, cellsID1=intersect(grp3Cells, mildCells), cellsID2=intersect(grp3Cells, severeCells), suffix1="grp3_mild", suffix2="grp3_severe", test="MAST", assay="RNA")
+
+grpnk_mild_severe = compareClusters(scdata=obj.integrated, cellsID1=intersect(grpNKCells, mildCells), cellsID2=intersect(grpNKCells, severeCells), suffix1="grpnk_mild", suffix2="grpnk_severe", test="MAST", assay="RNA")
+
+grpnk_mild_severe2 = compareClusters(scdata=obj.integrated, cellsID1=intersect(grpNKCells, mildCells), cellsID2=intersect(grpNKCells, severeCells), suffix1="grpnk_mild2", suffix2="grpnk_severe2", test="MAST", assay="RNA")
+
+```
+
+```{r eval=F}
+dim(grpnk_mild_severe)
+dim(grpnk_mild_severe2)
+```
+
+
+```{r eval=F}
+
+grps_control_mild = compareClusters(scdata=obj.integrated, cellsID1=intersect(grpMacCells, controlCells), cellsID2=intersect(grpMacCells, mildCells), suffix1="grp_control", suffix2="grp_mild", test="MAST", assay="RNA")
+
+grps_control_severe = compareClusters(scdata=obj.integrated, cellsID1=intersect(grpMacCells, controlCells), cellsID2=intersect(grpMacCells, severeCells), suffix1="grp_control", suffix2="grp_severe", test="MAST", assay="RNA")
+
+grps_mild_severe = compareClusters(scdata=obj.integrated, cellsID1=intersect(grpMacCells, mildCells), cellsID2=intersect(grpMacCells, severeCells), suffix1="grp_mild", suffix2="grp_severe", test="MAST", assay="RNA")
+
+grps_mild_severe_all = compareClusters(scdata=obj.integrated, cellsID1=intersect(grpMacCells, mildCells), cellsID2=intersect(grpMacCells, severeCells), suffix1="grp_mild", suffix2="grp_severe", test="MAST", assay="RNA", all=TRUE)
+
+```
+
+```{r}
+
+pdf = data.frame(avg_logFC=grps_mild_severe_all$avg_logFC, p_val_adj=-log(grps_mild_severe_all$p_val_adj))
+ggplot(pdf, aes(x=avg_logFC, y=p_val_adj)) + geom_point()
+
+```
+
+
+
+The following are genes of interest:
+```{r}
+
+targetGenes = c("CCL2", "CCL3", "CCL4", "CCL7", "CCL8", "CXCL8", "IL1B" )
+
+```
+
+This function plots nice violin plots for the above target genes and splits the violins by disease state!
+
+```{r fig.height=10, fig.width=14}
+
+plotViolins = function(clusterIdents, plotFile, tgenes=targetGenes)
+{
+  plotTitle = paste("Gene Expression clusters", paste(as.list(as.character(sort(clusterIdents))), collapse=", ") )
+vp=VlnPlot(obj.integrated, features = tgenes, idents=clusterIdents, group.by = "disease_state", ncol = 2, pt.size=0, combine = FALSE)
+vp=lapply(vp, FUN=function(x){return(x+theme(legend.position="none"))})
+
+p1 <- cowplot::plot_grid(plotlist = vp)
+title <- ggdraw() + draw_label(plotTitle, fontface = 'bold')
+
+pdf(file = plotFile, width = 14, height = 10)
+print(cowplot::plot_grid(title, p1, ncol = 1, rel_heights = c(0.1, 1)))
+dev.off()
+
+cowplot::plot_grid(title, p1, ncol = 1, rel_heights = c(0.1, 1))
+
+
+}
+
+```
+
+```{r fig.height=5, fig.width=7}
+plotViolins(grpMacIdents, "plots/violins_macrophages_cd9.pdf", tgenes=c("CD9"))
+```
+
+```{r fig.height=5, fig.width=7}
+plotViolins(grpMacIdents, "plots/violins_fabp4_cd9.pdf", tgenes=c("CD9"))
+```
+
+```{r fig.height=10, fig.width=14}
+plotViolins(grpMacIdents, "plots/violins_macrophages.pdf")
+```
+
+```{r fig.height=10, fig.width=14}
+plotViolins(c(7), "plots/violins_7.pdf")
+```
+
+```{r fig.height=10, fig.width=14}
+plotViolins(c(13), "plots/violins_13.pdf")
+```
+
+```{r fig.height=10, fig.width=14}
+plotViolins(c(17), "plots/violins_17.pdf")
+```
+
+```{r fig.height=10, fig.width=14}
+plotViolins(c(25), "plots/violins_25.pdf")
+```
+
+```{r fig.height=10, fig.width=14}
+#7, 17, 13, 25
+plotViolins(grpNKIdents, "plots/violins_nk.pdf")
+```
+For more integrated analyses we must group all macrophage, all FABP4, all NK clusters and so on
+
+```{r}
+
+objIdents = Idents(obj.integrated)
+cellList = names(objIdents)
+identList = unname(objIdents)
+cellIdents.c = unlist(lapply(identList, as.character))
+
+
+featVec <- vector(mode="character", length=length(cellList))
+featVec = cellIdents.c
+
+featVec[cellList %in% grpMacCells] = "Macrophage Group"
+featVec[cellList %in% grp4Cells] = "FABP4 Group"
+featVec[cellList %in% grpNKCells] = "NK Group"
+
+obj.integrated$group_state=featVec
+
+obj.integrated=AddMetaData(obj.integrated, featVec, col.name = "groups")
+
+
+print("Remaining clusters")
+print(unique(featVec))
+
+```
+Heatmap of the taret Genes ...
+
+```{r fig.height=7, fig.width=15}
+p=DoHeatmap(subset(obj.integrated, downsample=200), group.by="ident", group.bar=T, features=targetGenes,assay="RNA", slot = "scale.data", disp.min = 0, disp.max = 3) +labs(title = "Group Expression Data")
+
+pdf(file = "plots/heatmap_messengers.pdf", width = 15, height = 7)
+print(p)
+dev.off()
+p
+```
+
+Heatmap of the taret Genes in mild disease state ...
+
+
+```{r fig.height=7, fig.width=15}
+
+p=DoHeatmap(subset(obj.integrated, cells=mildCells, downsample=200), group.by="groups", group.bar=T, features=targetGenes,assay="RNA", slot = "scale.data", disp.min = 0, disp.max = 3) +labs(title = "Group Expression Data")
+
+pdf(file = "plots/heatmap_messengers_mild.pdf", width = 15, height = 7)
+print(p)
+dev.off()
+p
+
+```
+
+
+Heatmap of the taret Genes in severe disease state ...
+```{r fig.height=7, fig.width=15}
+
+p=DoHeatmap(subset(obj.integrated, cells=severeCells, downsample=200), group.by="groups", group.bar=T, features=targetGenes,assay="RNA", slot = "scale.data", disp.min = 0, disp.max = 3) +labs(title = "Group Expression Data")
+
+pdf(file = "heatmap_messengers_severe.pdf", width = 15, height = 7)
+print(p)
+dev.off()
+p
+
+```
+
+A dot plot for the mild and severe target genes per group (as defined above)
+
+```{r fig.height=5, fig.width=15}
+
+allInterestCells = union(grpOtherNo2718106Cells, grpMacFabCells)
+
+p1=DotPlot(subset(obj.integrated, cells=intersect(allInterestCells, mildCells)), group.by="groups", features=targetGenes,assay="RNA", dot.min=0, scale.min=0, scale.max=100, col.min = -0.5, col.max = 2.5) +labs(title = "Group Expression Data mild")
+p2=DotPlot(subset(obj.integrated, cells=intersect(allInterestCells, severeCells)), group.by="groups", features=targetGenes,assay="RNA", dot.min=0, scale.min=0, scale.max=100, col.min = -0.5, col.max = 2.5) +labs(title = "Group Expression Data severe")
+
+pdf(file = "plots/dotplot_messengers_severe_mild.pdf", width = 15, height = 5)
+CombinePlots(list(p1=p1, p2=p2))
+dev.off()
+
+svg(file = "plots/dotplot_messengers_severe_mild.svg", width = 15, height = 5)
+CombinePlots(list(p1=p1, p2=p2))
+dev.off()
+
+CombinePlots(list(p1=p1, p2=p2))
+
+
+```
+Same data, just different visualization
+
+```{r fig.height=5, fig.width=15}
+pall=DotPlot(subset(obj.integrated, cells=intersect(allInterestCells, union(severeCells, mildCells))), group.by="groups", split.by="disease_state", features=targetGenes,assay="RNA", dot.min=0, scale.min=0, scale.max=100, col.min = -0.5, col.max = 2.5) +labs(title = "Group Expression Data")
+pall
+```
+
+## Supplementary plots
+The collaborators questioned low IFNG levels. But they are validly low. You can crosscheck with https://covidgenes.weill.cornell.edu/ where IFNG is also constantly low, in contrast to other viral infections!
+
+
+```{r fig.height=10, fig.width=15}
+
+p=FeaturePlot(object = obj.integrated, label=T, features = c("IFNG", "CD4", "CD8A"), min.cutoff = "q10", max.cutoff = "q90", reduction="umap", split.by="disease_state", ncol=3)
+p
+
+```
+
+
+```{r fig.height=5, fig.width=15}
+
+p1=DotPlot(obj.integrated, features=targetGenes,assay="RNA", dot.min=0, scale.min=0, scale.max=100, col.min = -0.5, col.max = 2.5) +labs(title = "Group Expression Data mild")
+p2=DotPlot(obj.integrated, features=targetGenes,assay="RNA", dot.min=0, scale.min=0, scale.max=100, col.min = -0.5, col.max = 2.5) +labs(title = "Group Expression Data severe")
+
+pdf(file = "plots/dotplot_idents.pdf", width = 15, height = 5)
+CombinePlots(list(p1=p1, p2=p2))
+dev.off()
+CombinePlots(list(p1=p1, p2=p2))
+
+```
+
+
+# Here we start a new chapter: gene sets
+
+Gene Set Enrichment Analysis is performed using clusterProfiler !
+
+```{r}
+library("org.Hs.eg.db")
+library("enrichplot")
+library("clusterProfiler")
+```
+
+
+```{r eval=F, warning=F}
+library(topGO)
+
+makeGOAnalysis = function(scdata, deData, clusterCells, topN=200)
+{
+  cluster0 <- subset(scdata, cells = clusterCells)
+  expr <- as.matrix(GetAssayData(cluster0))
+  # Select genes that are expressed > 0 in at least 75% of cells (somewhat arbitrary definition)
+  n.gt.0 <- apply(expr, 1, function(x)length(which(x > 0)))
+  expressed.genes <- rownames(expr)[which(n.gt.0/ncol(expr) >= 0.5)]
+  all.genes <- rownames(expr)
+  
+  # define geneList as 1 if gene is in expressed.genes, 0 otherwise
+  genelist.mast <- ifelse(all.genes %in% deData[deData$p_val_adj < 0.05 & deData$avg_logFC < 0,]$gene, 1, 0) # up in severe
+  names(genelist.mast) <- all.genes
+  
+  print(paste("All genes", length(all.genes)))
+  print(paste("Selected genes", length(genelist.mast[genelist.mast==1])))
+  
+  # Create topGOdata object
+  GOdata.mast <- new("topGOdata",
+  	ontology = "BP", # use biological process ontology
+  	allGenes = genelist.mast,
+  	geneSelectionFun = function(x)(x == 1),
+    annot = annFUN.org, mapping = "org.Hs.eg.db", ID = "symbol")
+  
+  resultFisher.mast <- runTest(GOdata.mast, algorithm = "elim", statistic = "fisher")
+  goRes.mast = GenTable(GOdata.mast, Fisher = resultFisher.mast, topNodes = topN, numChar = 60)
+  
+  return(goRes.mast)
+}
+
+#grps_mild_severe
+#gores = makeGOAnalysis(obj.integrated, grps_mild_severe, cellsMildSevere)
+#write.table(gores[gores$Significant > 5,], file = "macrophage_upregulated_severe_gobp.tsv", quote = F)
+```
+
+
+# This was just for development purposes ... R3.5.3 is not compatible with enrichplot for gseaResult :|
+
+```{r eval=F}
+#library(devtools)
+#install_version("pathfindR", version = "1.4.1" )
+
+#BiocManager::install("clusterProfiler")
+#devtools::install_github("GuangchuangYu/DOSE")
+#devtools::install_github("GuangchuangYu/enrichplot")
+#for gsea upsetplot
+
+#detach("package:tidyr, broom, tidyverse", unload=TRUE)
+
+
+#unloadNamespace("modelr")
+#unloadNamespace("tidyverse")
+#unloadNamespace("broom")
+#unloadNamespace("tidyr")
+#unloadNamespace("plotly")
+#unloadNamespace("Seurat")
+#unloadNamespace("plyr")
+#unloadNamespace("dplyr")
+
+#unloadNamespace("DOSE")
+#unloadNamespace("clusterProfiler")
+#unloadNamespace("enrichplot")
+
+#library("Seurat")
+#library(clusterProfiler)
+#library("enrichplot")
+```
+
+Note to self: logFC is natural logarithm! https://github.com/satijalab/seurat/issues/77
+
+```{r fig.height=6, fig.width=9}
+
+
+makeGSEAnalysis = function(degenes)
+{
+  
+  # select significantly regulated genes
+  siggenes = degenes[degenes$p_val_adj < 0.05,]
+  
+  # reverse avg logFC such that severe higher has positive logFC
+  siggenes$avg_logFC = -siggenes$avg_logFC
+  
+  # and we sort by decreasing logFC: geneList = sort(geneList, decreasing = TRUE) https://github.com/YuLab-SMU/DOSE/wiki/how-to-prepare-your-own-geneList
+  siggenes <- siggenes[order(-siggenes$avg_logFC),]
+  
+  # convert gene symbols to entrez ID for gseGO
+  geneNames = bitr(siggenes$gene, fromType = "SYMBOL", toType = c("ENTREZID"), OrgDb = org.Hs.eg.db)
+  siggenes = siggenes[siggenes$gene %in% geneNames$SYMBOL,]
+  
+  geneVector = as.vector(siggenes$avg_logFC)
+  names(geneVector) = geneNames$ENTREZID
+  # sort again decreasing ...
+  geneVector = sort(geneVector, decreasing = TRUE)
+  
+  #enrichGORes <- enrichGO(names(geneVector), ont="BP", OrgDb=org.Hs.eg.db)
+  
+  # perform gene set enrichment
+  gsecc <- gseGO(geneList=geneVector, ont="BP", OrgDb=org.Hs.eg.db, verbose=T, by="fgsea", minGSSize=10, maxGSSize = 50, pvalueCutoff=0.5) #nPerm=1000,
+  
+  # create a result version sorted by abs(NES) and set size < 50 and qvalue < 0.05
+  gseccf = gsecc
+  gseccf@result = gseccf@result[order(abs(gseccf@result$NES), decreasing = TRUE),]
+  gseccf@result = gseccf@result[gseccf@result$qvalues<0.05 & gseccf@result$setSize<50,]
+  
+  # create a result version sorted by abs(NES) and set size < 50 and qvalue < 0.05 with GENE SYMBOLS!
+  gseccx <- setReadable(gsecc, 'org.Hs.eg.db', 'ENTREZID')
+  gseccx@result = gseccx@result[order(abs(gseccx@result$NES), decreasing = TRUE),]
+  gseccx@result = gseccx@result[gseccx@result$qvalues<0.05,]
+  gseccx@result = gseccx@result[gseccx@result$qvalues<0.05 & gseccx@result$setSize<50,]
+  
+  return(list(gseall=gsecc, gsesym=gseccx, gseent=gseccf))
+}
+
+#gseaMac = makeGSEAnalysis(gseaLists$mac)
+#gseaNK = makeGSEAnalysis(gseaLists$nk)
+#saveRDS(list("mac"=gseaMac, "nk"=gseaNK), file="gseaResults.rds")
+
+```
+
+```{r}
+
+#saveRDS(list("mac"=grps_mild_severe, "nk"=grpnk_mild_severe), "gseainput.rds")
+
+```
+
+
+```{r eval=F}
+#gseMac = makeGSEAnalysis(grps_mild_severe)
+#gseNK = makeGSEAnalysis(grpnk_mild_severe)
+```
+```{r eval=F}
+
+# improved list of objects
+.ls.objects <- function (pos = 1, pattern, order.by,
+                        decreasing=FALSE, head=FALSE, n=5) {
+    napply <- function(names, fn) sapply(names, function(x)
+                                         fn(get(x, pos = pos)))
+    names <- ls(pos = pos, pattern = pattern)
+    obj.class <- napply(names, function(x) as.character(class(x))[1])
+    obj.mode <- napply(names, mode)
+    obj.type <- ifelse(is.na(obj.class), obj.mode, obj.class)
+    obj.prettysize <- napply(names, function(x) {
+                           format(utils::object.size(x), units = "auto") })
+    obj.size <- napply(names, object.size)
+    obj.dim <- t(napply(names, function(x)
+                        as.numeric(dim(x))[1:2]))
+    vec <- is.na(obj.dim)[, 1] & (obj.type != "function")
+    obj.dim[vec, 1] <- napply(names, length)[vec]
+    out <- data.frame(obj.type, obj.size, obj.prettysize, obj.dim)
+    names(out) <- c("Type", "Size", "PrettySize", "Length/Rows", "Columns")
+    if (!missing(order.by))
+        out <- out[order(out[[order.by]], decreasing=decreasing), ]
+    if (head)
+        out <- head(out, n)
+    out
+}
+
+# shorthand
+lsos <- function(..., n=10) {
+    .ls.objects(..., order.by="Size", decreasing=TRUE, head=TRUE, n=n)
+}
+
+lsos(n=50)
+
+gseaResults=NULL
+
+```
+
+
+gseResult:
+```{r}
+
+gseaResults = readRDS(file="gseaResults.rds")
+
+gseMac = gseaResults$mac
+gseNK = gseaResults$nk
+
+```
+
+```{r fig.height=6, fig.width=15}
+
+gseMacPlot = gseMac$gsesym
+gseMacPlot@result = gseMacPlot@result[gseMacPlot@result$NES > 0, ]
+
+p = cnetplot(gseMacPlot, categorySize="pvalue", foldChange=geneVector, colorEdge=T, showCategory=10)
+
+pdf(file = "gse/mac_gsea_nes_up.pdf",width = 15, height = 8)
+plot(p)
+dev.off()
+
+p
+
+```
+
+```{r fig.height=6, fig.width=15}
+
+gseNKPlot = gseNK$gsesym
+gseNKPlot@result = gseNKPlot@result[gseNKPlot@result$NES > 0, ]
+
+p = cnetplot(gseNKPlot, categorySize="pvalue", foldChange=geneVector, colorEdge=T, showCategory=10)
+
+pdf(file = "gse/nk_gsea_nes_up.pdf",width = 15, height = 8)
+plot(p)
+dev.off()
+
+p
+
+```
+
+
+```{r}
+
+library(xlsx)
+
+gseMacPlot = gseMac$gsesym
+gseMacPlot@result = gseMacPlot@result[gseMacPlot@result$NES > 0, ]
+write.table(gseMacPlot@result, file="gse/mac_nes_up.tsv", row.names = F,  quote=FALSE, sep='\t')
+write.xlsx(gseMacPlot@result, "gse/mac_nes_up.xlsx", sheetName = "Sheet1", col.names = TRUE, row.names = TRUE, append = FALSE)
+
+
+gseMacPlot = gseMac$gsesym
+gseMacPlot@result = gseMacPlot@result[gseMacPlot@result$NES < 0, ]
+
+write.table(gseMacPlot@result, file="gse/mac_nes_down.tsv", row.names = F,  quote=FALSE, sep='\t')
+write.xlsx(gseMacPlot@result, "gse/mac_nes_down.xlsx", sheetName = "Sheet1", col.names = TRUE, row.names = TRUE, append = FALSE)
+
+gseNKPlot = gseNK$gsesym
+gseNKPlot@result = gseNKPlot@result[gseNKPlot@result$NES > 0, ]
+write.table(gseNKPlot@result, file="gse/nk_nes_up.tsv", row.names = F,  quote=FALSE, sep='\t')
+write.xlsx(gseNKPlot@result, "gse/nk_nes_up.xlsx", sheetName = "Sheet1", col.names = TRUE, row.names = TRUE, append = FALSE)
+
+gseNKPlot = gseNK$gsesym
+gseNKPlot@result = gseNKPlot@result[gseNKPlot@result$NES < 0, ]
+
+write.table(gseNKPlot@result, file="gse/nk_nes_down.tsv", row.names = F,  quote=FALSE, sep='\t')
+write.xlsx(gseNKPlot@result, "gse/nk_nes_down.xlsx", sheetName = "Sheet1", col.names = TRUE, row.names = TRUE, append = FALSE)
+
+```
+
+
+```{r fig.height=4, fig.width=9}
+upsetplot(gseccf, showCategory=10, foldChange=geneVector)
+
+```
+
+
+```{r fig.height=3, fig.width=9}
+heatplot(gseccx, foldChange=geneVector, showCategory=10)
+
+```
+
+
+
+
